@@ -241,7 +241,21 @@ def main():
             # No, standard transform is linear.
             
             # Let's try the segmented approach again, but cleaner.
-            num_segments = 10 # 10 chunks across
+            # Dynamic segmentation to fix "banding" artifacts
+            # We ensure segments are roughly 2 pixels wide on screen for smoothness
+            num_segments = max(16, width_here // 2)
+            
+            # Since theta steps are equal, the Source Texture Width is constant for all segments
+            # (Visible face is 0.5 of texture width)
+            # We calculate it once to avoid rounding jitter
+            total_visible_tex_u = 0.5
+            segment_tex_w = (total_visible_tex_u / num_segments) * tex_w
+            
+            # We boost width slightly to overlap seams (ceil-ish approach) or handled by scale
+            # Using ceil(segment_tex_w) ensures we don't have gaps in texture reading, 
+            # but scale might jitter.
+            # Best to just integerize carefully loop-by-loop or use float fallback if pygame supported it.
+            # We'll use round for x, and ceil for w.
             
             for i in range(num_segments):
                 # Screen space segments (linear in angle)
@@ -253,20 +267,22 @@ def main():
                 x2 = half_width * math.sin(t2)
                 
                 seg_x = int(start_x + half_width + x1)
-                seg_w = int(x2 - x1)
+                seg_w = int(start_x + half_width + x2) - seg_x
+                
                 if seg_w < 1: seg_w = 1
                 
                 # Texture UVs
+                # Look up start U
                 u1 = (t1 + math.pi/2) / (2*math.pi) + rot_norm
-                u2 = (t2 + math.pi/2) / (2*math.pi) + rot_norm
-                u_w = (u2 - u1) # This is constant? No, u2-u1 in angle space is constant.
-                # Actually, in texture space, the width we grab is constant! 
-                # (Since we step linearly in angle).
-                # The visual compression comes from drawing effective texture width into smaller screen width.
                 
-                u1 %= 1.0
-                src_x = int(u1 * tex_w)
-                src_w_pixels = int((1.0 / (2 * num_segments)) * tex_w) 
+                # Calculate pixel X in texture (wrapped)
+                # We use the double-texture tech so we just modulo the start point
+                src_x = int((u1 % 1.0) * tex_w)
+                
+                # Use calculated constant width for stability, but create int rect
+                # Floating point accumulation might be an issue if we don't recalc u from i?
+                # We recalc u from i every time, so no drift.
+                src_w_pixels = int(segment_tex_w) + 1 # +1 for safety / overlap
                 
                 # Draw
                 # subsurface(rect) -> scale -> blit
