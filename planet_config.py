@@ -18,6 +18,10 @@ class PlanetConfig:
     island_size_min: int = 20
     island_size_max: int = 100
     
+    # Walker Gen
+    walker_x_var: int = 4
+    walker_y_var: int = 4
+    
     # Clouds
     num_clouds: int = 15
 
@@ -74,6 +78,22 @@ def get_lava_config():
         c_cloud=(100, 100, 100), # Ash
         num_islands=6,
         weather_speed=0.004,
+        num_clouds=20
+    )
+
+def get_gas_giant_config():
+    return PlanetConfig(
+        c_ocean_deep=(180, 160, 140), # Base tan
+        c_ocean_shallow=(210, 180, 150), # Light band
+        c_land_main=(160, 120, 100), # Darker band
+        c_land_highlight=(140, 80, 60), # Great Red Spot colors
+        c_cloud=(240, 230, 220), # Ammonia clouds
+        rotation_speed=0.003,
+        num_islands=40,
+        island_size_min=30,
+        island_size_max=80,
+        walker_x_var=15, # Stretch horribly horizontally
+        walker_y_var=1,  # Keep tight to bands
         num_clouds=20
     )
 

@@ -162,8 +162,8 @@ class Planet:
                 pygame.draw.rect(surf, col, (curr_x - 2, curr_y - 2, chunk_w + 4, chunk_h + 4))
                 if curr_x < 0: pygame.draw.rect(surf, col, (curr_x + w - 2, curr_y - 2, chunk_w + 4, chunk_h + 4))
                 if curr_x > w: pygame.draw.rect(surf, col, (curr_x - w - 2, curr_y - 2, chunk_w + 4, chunk_h + 4))
-                curr_x += random.randint(-4, 4)
-                curr_y += random.randint(-4, 4)
+                curr_x += random.randint(-self.config.walker_x_var, self.config.walker_x_var)
+                curr_y += random.randint(-self.config.walker_y_var, self.config.walker_y_var)
                 
         # 2. Main Land
         for cx, cy in centers: 
@@ -182,8 +182,8 @@ class Planet:
                 pygame.draw.rect(surf, col, (curr_x, curr_y, chunk_w, chunk_h))
                 pygame.draw.rect(surf, col, (curr_x - w, curr_y, chunk_w, chunk_h))
                 pygame.draw.rect(surf, col, (curr_x + w, curr_y, chunk_w, chunk_h))
-                curr_x += random.randint(-3, 3)
-                curr_y += random.randint(-3, 3)
+                curr_x += random.randint(-self.config.walker_x_var, self.config.walker_x_var)
+                curr_y += random.randint(-self.config.walker_y_var, self.config.walker_y_var)
         random.seed() 
         return surf
 

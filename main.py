@@ -8,7 +8,8 @@ from planet_config import (
     get_ice_world_config, 
     get_desert_config, 
     get_toxic_config, 
-    get_lava_config
+    get_lava_config,
+    get_gas_giant_config
 )
 
 # Initialize Pygame
@@ -43,7 +44,8 @@ def main():
         get_ice_world_config(), 
         get_desert_config(), 
         get_toxic_config(), 
-        get_lava_config()
+        get_lava_config(),
+        get_gas_giant_config()
     ]
     p_config = random.choice(configs)
     
