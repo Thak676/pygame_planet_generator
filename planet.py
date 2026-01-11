@@ -206,16 +206,24 @@ class Planet:
         
         # Update Shadow
         self.shadow_overlay.fill((0,0,0,0))
-        for x, y, nx, ny, nz in self.pixel_normals:
-             dot = nx * lx + ny * ly + nz * lz
-             if dot < 0.0:
-                 self.shadow_overlay.set_at((x, y), (0, 0, 0, 180))
-             elif dot < 0.15:
-                 if (x + y) % 2 == 0:
+        
+        # If we have dither_shadows enabled, we do the full lighting calculation.
+        # If disabled (like for a Sun), we might skip shadows entirely or just do simple ones.
+        # For the Sun, we probably want NO shadow overlay at all because it's emissive.
+        if self.config.dither_shadows:
+            for x, y, nx, ny, nz in self.pixel_normals:
+                 dot = nx * lx + ny * ly + nz * lz
+                 if dot < 0.0:
                      self.shadow_overlay.set_at((x, y), (0, 0, 0, 180))
-             elif dot < 0.3:
-                 if (x % 2 == 0) and (y % 2 == 0):
-                      self.shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+                 elif dot < 0.15:
+                     if (x + y) % 2 == 0:
+                         self.shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+                 elif dot < 0.3:
+                     if (x % 2 == 0) and (y % 2 == 0):
+                          self.shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+        else:
+             # For Sun/Emissive: No shadow overlay
+             pass
 
         # Spherical Projection
         slice_height = 1

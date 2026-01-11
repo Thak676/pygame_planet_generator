@@ -24,6 +24,9 @@ class PlanetConfig:
     
     # Clouds
     num_clouds: int = 15
+    
+    # Rendering
+    dither_shadows: bool = True
 
 # Presets
 
@@ -95,5 +98,21 @@ def get_gas_giant_config():
         walker_x_var=15, # Stretch horribly horizontally
         walker_y_var=1,  # Keep tight to bands
         num_clouds=20
+    )
+
+def get_sun_config():
+    return PlanetConfig(
+        c_ocean_deep=(255, 60, 0),     # Bright Red/Orange
+        c_ocean_shallow=(255, 140, 0), # Bright Orange
+        c_land_main=(255, 200, 0),     # Bright Yellow
+        c_land_highlight=(255, 255, 220), # White-hot
+        c_cloud=(255, 240, 150),       # Bright Flares
+        rotation_speed=0.002,
+        weather_speed=0.004,
+        num_islands=20,
+        island_size_min=10,
+        island_size_max=40,
+        num_clouds=25,
+        dither_shadows=False
     )
 
