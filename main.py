@@ -85,15 +85,32 @@ def generate_pixel_texture(w, h):
     
     random.seed() # Reset seed
 
-    # 3. Clouds (Horizontal strips)
-    for _ in range(20):
-        y = random.randint(0, h)
-        width_cloud = random.randint(10, 40)
-        x = random.randint(0, w)
-        cloud_surf = pygame.Surface((width_cloud, 2))
-        cloud_surf.fill(C_CLOUD)
-        surf.blit(cloud_surf, (x, y))
-        surf.blit(cloud_surf, (x - w, y)) # Wrap
+    # 3. Clouds (Blobby shapes)
+    num_clouds = 25
+    for _ in range(num_clouds):
+        cx = random.randint(0, w)
+        cy = random.randint(0, h)
+        
+        # Build cloud out of multiple small puffs
+        num_puffs = random.randint(4, 9)
+        for _ in range(num_puffs):
+            puff_w = random.randint(4, 9)
+            puff_h = random.randint(2, 5)
+            
+            # Scatter puffs around center
+            ox = random.randint(-8, 8)
+            oy = random.randint(-3, 3)
+            
+            px, py = cx + ox, cy + oy
+            
+            # Draw puff
+            pygame.draw.rect(surf, C_CLOUD, (px, py, puff_w, puff_h))
+            
+            # Handle wrapping for X axis
+            if px < 0:
+                pygame.draw.rect(surf, C_CLOUD, (px + w, py, puff_w, puff_h))
+            elif px + puff_w > w:
+                pygame.draw.rect(surf, C_CLOUD, (px - w, py, puff_w, puff_h))
 
     return surf
 
