@@ -119,15 +119,19 @@ class Planet:
         
         # Pre-calc 3D Normals
         self.pixel_normals = []
-        for y in range(self.radius * 2):
-            dy = (y - self.radius) / self.radius
-            for x in range(self.radius * 2):
-                dx = (x - self.radius) / self.radius
-                dist_sq = dx*dx + dy*dy
-                if dist_sq <= 1.0:
-                    dz = math.sqrt(1.0 - dist_sq)
-                    self.pixel_normals.append((x, y, dx, dy, dz))
-
+        # Optimization: Only calculate normals if we actually use them (dither_shadows is True)
+        # This saves massive startup time for large stars (dither_shadows=False)
+        if hasattr(config, 'dither_shadows') and config.dither_shadows:
+            for y in range(self.radius * 2):
+                dy = (y - self.radius) / self.radius
+                for x in range(self.radius * 2):
+                    dx = (x - self.radius) / self.radius
+                    dist_sq = dx*dx + dy*dy
+                    if dist_sq <= 1.0:
+                        dz = math.sqrt(1.0 - dist_sq)
+                        self.pixel_normals.append((x, y, dx, dy, dz))
+        
+        # We still need the surface buffer, but leave it empty if no shadows
         self.shadow_overlay = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
 
     def generate_base_map(self, w, h):
@@ -229,55 +233,67 @@ class Planet:
         slice_height = 1
         rot_norm = self.rotation_angle / 360.0
         
-        for y_rel in range(-self.radius, self.radius, slice_height):
-            y_center = y_rel
-            if abs(y_center) >= self.radius: continue
+        # Clipping: Only iterate rows that are visible on the target surface
+        # We want: 0 <= center_y + y_rel < surface_height
+        surface_h = surface.get_height()
+        min_y_rel = -self.radius
+        max_y_rel = self.radius
+        
+        start_y = max(min_y_rel, -center_y)
+        end_y = min(max_y_rel, surface_h - center_y)
+        
+        # Ensure we don't crash if offscreen (though main.py should cull too)
+        if start_y < end_y:
+            for y_rel in range(start_y, end_y, slice_height):
+                y_center = y_rel
+                if abs(y_center) >= self.radius: continue
 
-            # Circle width at this Y
-            half_width = math.sqrt(self.radius**2 - y_center**2)
-            width_here = int(half_width * 2)
-            if width_here <= 0: continue
+                # Circle width at this Y
+                half_width = math.sqrt(self.radius**2 - y_center**2)
+                width_here = int(half_width * 2)
+                if width_here <= 0: continue
 
-            # Lat coordinate
-            lat = math.asin(y_center / self.radius)
-            norm_v = 1.0 - (lat + (math.pi/2)) / math.pi
-            tex_y = int(norm_v * self.tex_h)
-            tex_y = max(0, min(self.tex_h-1, tex_y))
+                # Lat coordinate
+                lat = math.asin(y_center / self.radius)
+                norm_v = 1.0 - (lat + (math.pi/2)) / math.pi
+                tex_y = int(norm_v * self.tex_h)
+                tex_y = max(0, min(self.tex_h-1, tex_y))
 
-            # Draw row
-            dest_y = center_y + y_rel
-            start_x = center_x - int(half_width)
-            
-            num_segments = max(16, width_here // 2)
-            
-            total_visible_tex_u = 0.5
-            segment_tex_w = (total_visible_tex_u / num_segments) * self.tex_w
-            
-            for i in range(num_segments):
-                # Screen space segments
-                t1 = - (math.pi / 2) + (i * (math.pi/num_segments))
-                t2 = - (math.pi / 2) + ((i + 1) * (math.pi/num_segments))
+                # Draw row
+                dest_y = center_y + y_rel
+                start_x = center_x - int(half_width)
                 
-                x1 = half_width * math.sin(t1)
-                x2 = half_width * math.sin(t2)
+                num_segments = max(16, width_here // 2)
                 
-                seg_x = int(start_x + half_width + x1)
-                seg_w = int(start_x + half_width + x2) - seg_x
+                total_visible_tex_u = 0.5
+                segment_tex_w = (total_visible_tex_u / num_segments) * self.tex_w
                 
-                if seg_w < 1: seg_w = 1
-                
-                # Texture UVs
-                u1 = (t1 + math.pi/2) / (2*math.pi) + rot_norm
-                
-                src_x = int((u1 % 1.0) * self.tex_w)
-                src_w_pixels = int(segment_tex_w) + 1 
-                
-                try:
-                    chunk = self.wrapped_texture.subsurface((src_x, tex_y, src_w_pixels, 1))
-                    chunk = pygame.transform.scale(chunk, (seg_w, 1))
-                    surface.blit(chunk, (seg_x, dest_y))
-                except (ValueError, pygame.error):
-                    pass
+                for i in range(num_segments):
+                    # Screen space segments
+                    t1 = - (math.pi / 2) + (i * (math.pi/num_segments))
+                    t2 = - (math.pi / 2) + ((i + 1) * (math.pi/num_segments))
+                    
+                    x1 = half_width * math.sin(t1)
+                    x2 = half_width * math.sin(t2)
+                    
+                    seg_x = int(start_x + half_width + x1)
+                    seg_w = int(start_x + half_width + x2) - seg_x
+                    
+                    if seg_w < 1: seg_w = 1
+                    
+                    # Texture UVs
+                    u1 = (t1 + math.pi/2) / (2*math.pi) + rot_norm
+                    
+                    src_x = int((u1 % 1.0) * self.tex_w)
+                    src_w_pixels = int(segment_tex_w) + 1 
+                    
+                    try:
+                        chunk = self.wrapped_texture.subsurface((src_x, tex_y, src_w_pixels, 1))
+                        chunk = pygame.transform.scale(chunk, (seg_w, 1))
+                        surface.blit(chunk, (seg_x, dest_y))
+                    except (ValueError, pygame.error):
+                        pass
 
         # Apply Shadow
-        surface.blit(self.shadow_overlay, (center_x - self.radius, center_y - self.radius))
+        if self.config.dither_shadows:
+            surface.blit(self.shadow_overlay, (center_x - self.radius, center_y - self.radius))

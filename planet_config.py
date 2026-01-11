@@ -102,17 +102,18 @@ def get_gas_giant_config():
 
 def get_sun_config():
     return PlanetConfig(
-        c_ocean_deep=(255, 60, 0),     # Bright Red/Orange
-        c_ocean_shallow=(255, 140, 0), # Bright Orange
-        c_land_main=(255, 200, 0),     # Bright Yellow
-        c_land_highlight=(255, 255, 220), # White-hot
-        c_cloud=(255, 240, 150),       # Bright Flares
+        radius=100,                    # HUGE
+        c_ocean_deep=(255, 215, 0),    # Main Surface: Golden Yellow
+        c_ocean_shallow=(255, 140, 0), # Penumbra: Dark Orange
+        c_land_main=(160, 60, 10),     # Sunspot: Dark Red/Brown
+        c_land_highlight=(110, 40, 5), # Core: Even Darker
+        c_cloud=(0, 0, 0),             # Ignored
         rotation_speed=0.002,
-        weather_speed=0.004,
-        num_islands=20,
-        island_size_min=10,
-        island_size_max=40,
-        num_clouds=25,
+        weather_speed=0.0,             
+        num_islands=25,                # More spots
+        island_size_min=4,             # Small spots
+        island_size_max=18,            # Not huge continents
+        num_clouds=0,                  
         dither_shadows=False
     )
 

@@ -42,12 +42,12 @@ def main():
     # Create Planet
     # Choose a random planet type
     configs = [
-        # get_terran_config(), 
-        # get_ice_world_config(), 
-        # get_desert_config(), 
-        # get_toxic_config(), 
-        # get_lava_config(),
-        # get_gas_giant_config(),
+        get_terran_config(), 
+        get_ice_world_config(), 
+        get_desert_config(), 
+        get_toxic_config(), 
+        get_lava_config(),
+        get_gas_giant_config(),
         get_sun_config()
     ]
     p_config = random.choice(configs)
@@ -121,10 +121,13 @@ def main():
         screen_planet_x = int(planet_pos[0] - camera_x)
         screen_planet_y = int(planet_pos[1] - camera_y)
         
-        # Only draw planet if somewhat on screen (simple culling)
-        # Radius is 50, + margin
-        if (-100 < screen_planet_x < LOGICAL_WIDTH + 100 and 
-            -100 < screen_planet_y < LOGICAL_HEIGHT + 100):
+        # Only draw planet if somewhat on screen (Culling)
+        # Dynamic margin based on radius
+        planet_r = current_planet.radius
+        margin = planet_r + 50
+        
+        if (-margin < screen_planet_x < LOGICAL_WIDTH + margin and 
+            -margin < screen_planet_y < LOGICAL_HEIGHT + margin):
             current_planet.draw(canvas, screen_planet_x, screen_planet_y, light_vector)
         
         # Draw Player
