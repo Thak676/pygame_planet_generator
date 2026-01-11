@@ -14,6 +14,7 @@ PLANET_RADIUS = 50
 ROTATION_SPEED = 0.001
 WEATHER_SPEED = 0.001
 ORBIT_SPEED = 0.0005
+TRAVEL_SPEED = 0.2
 
 # Colors (Pixel Art Palette)
 C_SPACE = (20, 10, 25)
@@ -218,12 +219,13 @@ def main():
 
     # Assets
     # Stars (small points)
-    stars_surf = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT))
-    stars_surf.fill(C_SPACE)
+    stars = []
     for _ in range(50):
-        x, y = random.randint(0, LOGICAL_WIDTH), random.randint(0, LOGICAL_HEIGHT)
+        # Allow float for smooth movement
+        x = float(random.randint(0, LOGICAL_WIDTH))
+        y = float(random.randint(0, LOGICAL_HEIGHT))
         c = random.randint(100, 200)
-        stars_surf.set_at((x, y), (c, c, c))
+        stars.append([x, y, c])
 
     # Shadow Pre-calculation
     # We store valid pixels to avoid iterating the whole square every frame
@@ -297,8 +299,16 @@ def main():
                  if (x % 2 == 0) and (y % 2 == 0):
                       shadow_overlay.set_at((x, y), (0, 0, 0, 180))
 
-        # Draw to canvas
-        canvas.blit(stars_surf, (0, 0))
+        # Draw Background & Stars
+        canvas.fill(C_SPACE)
+        for s in stars:
+            s[0] -= TRAVEL_SPEED
+            if s[0] < 0: s[0] += LOGICAL_WIDTH
+            
+            ix, iy = int(s[0]), int(s[1])
+            # Basic clipping check
+            if 0 <= ix < LOGICAL_WIDTH and 0 <= iy < LOGICAL_HEIGHT:
+                 canvas.set_at((ix, iy), (s[2], s[2], s[2]))
 
         planet_center_x = LOGICAL_WIDTH // 2
         planet_center_y = LOGICAL_HEIGHT // 2
