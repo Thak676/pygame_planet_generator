@@ -137,24 +137,37 @@ def main():
     # For pixel art, we often use DITHERING for shadow edges
     shadow_overlay = pygame.Surface((PLANET_RADIUS * 2, PLANET_RADIUS * 2), pygame.SRCALPHA)
     
+    # 3D Light vector (Left, Top, Front)
+    lx, ly, lz = -0.6, -0.4, 0.5
+    mag = math.sqrt(lx*lx + ly*ly + lz*lz)
+    lx, ly, lz = lx/mag, ly/mag, lz/mag
+
     for y in range(PLANET_RADIUS * 2):
         dy = (y - PLANET_RADIUS) / PLANET_RADIUS
         for x in range(PLANET_RADIUS * 2):
             dx = (x - PLANET_RADIUS) / PLANET_RADIUS
             dist_sq = dx*dx + dy*dy
             if dist_sq <= 1.0: # Inside circle
-                light_x, light_y = -0.5, -0.5
-                dot = (dx * light_x + dy * light_y)
+                # Calculate Z normal for curvature
+                dz = math.sqrt(1.0 - dist_sq)
                 
-                # Pixel Art Shadow Logic
-                # If dot < -0.2: Dark Shadow
-                # If dot < 0.1: Dither Shadow
+                # 3D Dot product
+                dot = (dx * lx + dy * ly + dz * lz)
+                
+                # Multi-stage Dithering Layers
+                # 1. Deep Shadow
                 if dot < -0.2:
                     shadow_overlay.set_at((x, y), (0, 0, 0, 180))
-                elif dot < 0.2:
-                    # Dither pattern check
+                
+                # 2. Medium Dither (Checkerboard) - The terminator curves due to dz
+                elif dot < 0.05:
                     if (x + y) % 2 == 0:
                         shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+                
+                # 3. Light Dither (Sparse) - Softens the edge further
+                elif dot < 0.2:
+                    if (x % 2 == 0) and (y % 2 == 0):
+                         shadow_overlay.set_at((x, y), (0, 0, 0, 180))
     
     rotation_angle = 0.0
 
