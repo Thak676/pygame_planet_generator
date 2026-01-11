@@ -149,44 +149,22 @@ def main():
         c = random.randint(100, 200)
         stars_surf.set_at((x, y), (c, c, c))
 
-    # Shadow with dithering feel
-    # We build a shadow map where 0 = transparent, 1 = shadow
-    # For pixel art, we often use DITHERING for shadow edges
-    shadow_overlay = pygame.Surface((PLANET_RADIUS * 2, PLANET_RADIUS * 2), pygame.SRCALPHA)
-    
-    # 3D Light vector (Left, Top, Front)
-    lx, ly, lz = -0.6, -0.4, 0.5
-    mag = math.sqrt(lx*lx + ly*ly + lz*lz)
-    lx, ly, lz = lx/mag, ly/mag, lz/mag
-
+    # Shadow Pre-calculation
+    # We store valid pixels to avoid iterating the whole square every frame
+    pixel_normals = []
     for y in range(PLANET_RADIUS * 2):
         dy = (y - PLANET_RADIUS) / PLANET_RADIUS
         for x in range(PLANET_RADIUS * 2):
             dx = (x - PLANET_RADIUS) / PLANET_RADIUS
             dist_sq = dx*dx + dy*dy
-            if dist_sq <= 1.0: # Inside circle
-                # Calculate Z normal for curvature
+            if dist_sq <= 1.0:
                 dz = math.sqrt(1.0 - dist_sq)
-                
-                # 3D Dot product
-                dot = (dx * lx + dy * ly + dz * lz)
-                
-                # Multi-stage Dithering Layers
-                # 1. Deep Shadow
-                if dot < -0.2:
-                    shadow_overlay.set_at((x, y), (0, 0, 0, 180))
-                
-                # 2. Medium Dither (Checkerboard) - The terminator curves due to dz
-                elif dot < 0.05:
-                    if (x + y) % 2 == 0:
-                        shadow_overlay.set_at((x, y), (0, 0, 0, 180))
-                
-                # 3. Light Dither (Sparse) - Softens the edge further
-                elif dot < 0.2:
-                    if (x % 2 == 0) and (y % 2 == 0):
-                         shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+                pixel_normals.append((x, y, dx, dy, dz))
+
+    shadow_overlay = pygame.Surface((PLANET_RADIUS * 2, PLANET_RADIUS * 2), pygame.SRCALPHA)
     
     rotation_angle = 0.0
+    light_orbit_angle = 0.0
 
     # Rendering Config
     SLICE_HEIGHT = 2        # Use smaller strips for blockier look? Or 1 for precision
@@ -204,6 +182,37 @@ def main():
         if rotation_angle >= 360: rotation_angle -= 360
         
         rot_norm = rotation_angle / 360.0
+
+        # Dynamic Lighting
+        light_orbit_angle += 0.02
+        # Orbit the light around the planet
+        lx = math.sin(light_orbit_angle)
+        lz = math.cos(light_orbit_angle) 
+        ly = -0.3 # Slight vertical tilt
+        
+        # Re-render shadow
+        shadow_overlay.fill((0,0,0,0))
+        # Lock surface for faster pixel access
+        # Note: In Pygame, individual set_at is slow. 
+        # For better perf we might use PixelArray, but let's try set_at first.
+        # If it lags, we will optimize.
+        
+        for x, y, nx, ny, nz in pixel_normals:
+             # Dot product
+             dot = nx * lx + ny * ly + nz * lz
+             
+             # Shadow Logic:
+             # dot < 0 means surface faces away from light -> Full Shadow (Darkest)
+             # This ensures exactly half the planet is in the "darkest shade"
+             if dot < 0.0:
+                 shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+             # Dither bands appear on the LIT side as light fades (grazing angle)
+             elif dot < 0.15:
+                 if (x + y) % 2 == 0:
+                     shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+             elif dot < 0.3:
+                 if (x % 2 == 0) and (y % 2 == 0):
+                      shadow_overlay.set_at((x, y), (0, 0, 0, 180))
 
         # Draw to canvas
         canvas.blit(stars_surf, (0, 0))
