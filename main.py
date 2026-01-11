@@ -18,9 +18,7 @@ from planet_config import (
 pygame.init()
 
 # Constants
-SCALE_FACTOR = 4
-LOGICAL_WIDTH, LOGICAL_HEIGHT = 200, 150
-WIDTH, HEIGHT = LOGICAL_WIDTH * SCALE_FACTOR, LOGICAL_HEIGHT * SCALE_FACTOR
+WIDTH, HEIGHT = 1920, 1080 
 FPS = 30
 
 # Simulation Constants (Universe)
@@ -33,11 +31,17 @@ C_SPACE = (20, 10, 25)
 def main():
     # Window setup
     real_screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    # Render surface (small)
-    canvas = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT))
-    
     pygame.display.set_caption("Pixel Planet")
     clock = pygame.time.Clock()
+
+    # Zoom / Scale State
+    current_scale = 4.0
+    
+    def get_logical_dims(scale):
+        return int(WIDTH / scale), int(HEIGHT / scale)
+
+    logical_w, logical_h = get_logical_dims(current_scale)
+    canvas = pygame.Surface((logical_w, logical_h))
 
     # Create Solar System
     # Sun at (0,0)
@@ -62,7 +66,7 @@ def main():
         d = int(orbit_base * dist_mult)
         # Kepler-ish orbital speed (slower further out)
         # Made extremely slow (0.5 -> 0.02)
-        speed = 0.0002 / math.sqrt(d) 
+        speed = 0.02 / math.sqrt(d) 
         angle = random.uniform(0, 6.28)
         
         planets.append({
@@ -80,23 +84,75 @@ def main():
     start_x = math.cos(start_p['angle']) * (start_p['dist'] + 80)
     start_y = math.sin(start_p['angle']) * (start_p['dist'] + 80)
     
-    player = Spaceship(start_x, start_y, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+    player = Spaceship(start_x, start_y, logical_w, logical_h)
 
     # Assets
     # Stars (Infinite field simulation)
     stars = []
-    for _ in range(80):
-        x = random.uniform(0, LOGICAL_WIDTH)
-        y = random.uniform(0, LOGICAL_HEIGHT)
-        depth = 0.05 
-        c = random.randint(100, 200)
-        stars.append({'x': x, 'y': y, 'depth': depth, 'c': c})
+    
+    def refresh_stars(w, h, cam_x, cam_y):
+        # When zooming, we want to somewhat preserve the starfield feel or just regen
+        # For simplicity, regen full field based on density
+        stars.clear()
+        num_stars = int(w * h * 0.0008) 
+        for _ in range(num_stars):
+            # Generate relative to camera so we are in a populated area
+            x = random.uniform(cam_x, cam_x + w)
+            y = random.uniform(cam_y, cam_y + h)
+            depth = 0.05 
+            c = random.randint(100, 200)
+            stars.append({'x': x, 'y': y, 'depth': depth, 'c': c})
+
+    # Initial stars: assume camera at 0? No, player pos
+    # Camera calc
+    cam_x = player.pos.x - logical_w / 2
+    cam_y = player.pos.y - logical_h / 2
+    refresh_stars(logical_w, logical_h, cam_x, cam_y)
+    
+    light_orbit_angle = 0.0
     
     running = True
     while running:
+        # Camera calc for this frame (needed for input/stars logic?)
+        # We calculate it before drawing usually, but let's have a current val
+        camera_x = player.pos.x - logical_w / 2
+        camera_y = player.pos.y - logical_h / 2
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.MOUSEWHEEL:
+                old_scale = current_scale
+                # Mouse wheel up (positive) -> Zoom IN (increase scale)
+                # Mouse wheel down (negative) -> Zoom OUT (decrease scale)
+                current_scale += event.y * 0.2
+                current_scale = max(0.5, min(current_scale, 8.0))
+                
+                if abs(current_scale - old_scale) > 0.01:
+                    logical_w, logical_h = get_logical_dims(current_scale)
+                    canvas = pygame.Surface((logical_w, logical_h))
+                    
+                    # Update Player Culling Bounds
+                    player.bounds_w = logical_w
+                    player.bounds_h = logical_h
+                    
+                    # Refresh stars for new viewport size 
+                    # (centered around current camera to avoid empty voids immediately)
+                    # Recalc camera for new center
+                    new_cam_x = player.pos.x - logical_w / 2
+                    new_cam_y = player.pos.y - logical_h / 2
+                    refresh_stars(logical_w, logical_h, new_cam_x, new_cam_y)
+                    
+                    # Update camera var for this frame immediately
+                    camera_x = new_cam_x
+                    camera_y = new_cam_y
+
+        # Dynamic Lighting / Orbit
+        light_orbit_angle += ORBIT_SPEED
+        lx = math.sin(light_orbit_angle)
+        lz = math.cos(light_orbit_angle) 
+        ly = -0.3 # Slight vertical tilt
+        light_vector = (lx, ly, lz)
 
         # Update Sun
         sun.update()
@@ -113,18 +169,22 @@ def main():
         player.update()
         
         # Camera Update (Rigid Lock)
-        camera_x = player.pos.x - LOGICAL_WIDTH / 2
-        camera_y = player.pos.y - LOGICAL_HEIGHT / 2
+        camera_x = player.pos.x - logical_w / 2
+        camera_y = player.pos.y - logical_h / 2
 
         # Draw Background & Stars (Parallax)
         canvas.fill(C_SPACE)
         for s in stars:
             # Scroll stars based on depth
-            sx = (s['x'] - camera_x * s['depth']) % LOGICAL_WIDTH
-            sy = (s['y'] - camera_y * s['depth']) % LOGICAL_HEIGHT
+            # (Original World Pos - Camera * Depth) % ScreenSize
+            # Note: With resizing screen, mod logic is tricky. 
+            # We switched to "world space stars" in refresh_stars but simple parallax needs a wrap.
+            # Let's simple wrap:
+            sx = (s['x'] - camera_x * s['depth']) % logical_w
+            sy = (s['y'] - camera_y * s['depth']) % logical_h
             
             ix, iy = int(sx), int(sy)
-            if 0 <= ix < LOGICAL_WIDTH and 0 <= iy < LOGICAL_HEIGHT:
+            if 0 <= ix < logical_w and 0 <= iy < logical_h:
                  canvas.set_at((ix, iy), (s['c'], s['c'], s['c']))
 
         # Draw Sun
@@ -132,8 +192,8 @@ def main():
         sun_sc_y = int(0 - camera_y)
         sun_margin = sun.radius + 50
         
-        if (-sun_margin < sun_sc_x < LOGICAL_WIDTH + sun_margin and 
-            -sun_margin < sun_sc_y < LOGICAL_HEIGHT + sun_margin):
+        if (-sun_margin < sun_sc_x < logical_w + sun_margin and 
+            -sun_margin < sun_sc_y < logical_h + sun_margin):
             # Sun looks fine with simple front lighting or no lighting
             sun.draw(canvas, sun_sc_x, sun_sc_y, (0, 0, 1))
 
@@ -146,8 +206,8 @@ def main():
             radius = p['body'].radius
             margin = radius + 50
             
-            if (-margin < sc_x < LOGICAL_WIDTH + margin and 
-                -margin < sc_y < LOGICAL_HEIGHT + margin):
+            if (-margin < sc_x < logical_w + margin and 
+                -margin < sc_y < logical_h + margin):
                 
                 # Calculate light direction (from planet TO sun)
                 # Sun is at 0,0
