@@ -47,22 +47,25 @@ class Spaceship:
         self.vel *= self.friction
         self.pos += self.vel
         
-        # Screen Wrapping
-        self.pos.x = self.pos.x % self.bounds_w
-        self.pos.y = self.pos.y % self.bounds_h
+        # No screen wrapping - infinite world
+        # self.pos.x = self.pos.x % self.bounds_w
+        # self.pos.y = self.pos.y % self.bounds_h
 
-    def draw(self, surface):
-        ix, iy = int(self.pos.x), int(self.pos.y)
+    def draw(self, surface, camera_x, camera_y):
+        # Draw relative to camera
+        ix = int(self.pos.x - camera_x)
+        iy = int(self.pos.y - camera_y)
         
         # Draw simple dot for the ship body
-        pygame.draw.circle(surface, self.color, (ix, iy), 1)
+        if 0 <= ix < self.bounds_w and 0 <= iy < self.bounds_h:
+            pygame.draw.circle(surface, self.color, (ix, iy), 1)
         
-        # Draw a tiny engine flare if thrusting? 
-        # Or just a direction indicator (pixel)
-        rad = math.radians(self.angle)
-        front_x = ix + math.cos(rad) * 2
-        front_y = iy - math.sin(rad) * 2
-        
-        # Draw a single pixel at the front to indicate direction
-        if 0 <= front_x < self.bounds_w and 0 <= front_y < self.bounds_h:
-            surface.set_at((int(front_x), int(front_y)), (200, 200, 200))
+            # Draw a tiny engine flare if thrusting? 
+            # Or just a direction indicator (pixel)
+            rad = math.radians(self.angle)
+            front_x = ix + math.cos(rad) * 2
+            front_y = iy - math.sin(rad) * 2
+            
+            # Draw a single pixel at the front to indicate direction
+            if 0 <= front_x < self.bounds_w and 0 <= front_y < self.bounds_h:
+                surface.set_at((int(front_x), int(front_y)), (200, 200, 200))
