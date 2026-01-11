@@ -2,6 +2,7 @@ import pygame
 import math
 import random
 from planet import Planet
+from spaceship import Spaceship
 from planet_config import (
     PlanetConfig, 
     get_terran_config, 
@@ -53,6 +54,9 @@ def main():
     # p_config.rotation_speed = 0.001 
     
     current_planet = Planet(p_config)
+    
+    # Create Player
+    player = Spaceship(LOGICAL_WIDTH/2, LOGICAL_HEIGHT/2 + 60, LOGICAL_WIDTH, LOGICAL_HEIGHT)
 
     # Assets
     # Stars (small points)
@@ -81,6 +85,10 @@ def main():
 
         # Update Planet
         current_planet.update()
+        
+        # Update Player
+        player.handle_input()
+        player.update()
 
         # Draw Background & Stars
         canvas.fill(C_SPACE)
@@ -96,6 +104,9 @@ def main():
         planet_center_x = LOGICAL_WIDTH // 2
         planet_center_y = LOGICAL_HEIGHT // 2
         current_planet.draw(canvas, planet_center_x, planet_center_y, light_vector)
+        
+        # Draw Player
+        player.draw(canvas)
         
         # Scale to window
         scaled_surf = pygame.transform.scale(canvas, (WIDTH, HEIGHT))
