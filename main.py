@@ -39,43 +39,58 @@ def main():
     pygame.display.set_caption("Pixel Planet")
     clock = pygame.time.Clock()
 
-    # Create Planet
-    # Choose a random planet type
-    configs = [
-        get_terran_config(), 
-        get_ice_world_config(), 
-        get_desert_config(), 
-        get_toxic_config(), 
-        get_lava_config(),
-        get_gas_giant_config(),
-        get_sun_config()
+    # Create Solar System
+    # Sun at (0,0)
+    sun_config = get_sun_config()
+    sun = Planet(sun_config)
+    
+    # Orbiting Planets
+    planets = []
+    
+    # Types of planets to spawn (Config, Distance Multiplier relative to Sun radius)
+    planet_types = [
+        (get_lava_config(), 2.0),
+        (get_terran_config(), 3.5),
+        (get_gas_giant_config(), 6.0),
+        (get_ice_world_config(), 8.5)
     ]
-    p_config = random.choice(configs)
     
-    # Apply global simulation overrides if needed, or stick to config defaults
-    # p_config.rotation_speed = 0.001 
+    # Base distance to ensure we don't clip inside the sun
+    orbit_base = sun.radius + 150
     
-    current_planet = Planet(p_config)
-    
+    for config, dist_mult in planet_types:
+        d = int(orbit_base * dist_mult)
+        # Kepler-ish orbital speed (slower further out)
+        # Made extremely slow (0.5 -> 0.02)
+        speed = 0.0002 / math.sqrt(d) 
+        angle = random.uniform(0, 6.28)
+        
+        planets.append({
+            'body': Planet(config),
+            'dist': d,
+            'speed': speed,
+            'angle': angle,
+            'x': 0, 'y': 0
+        })
+
     # Create Player
-    # Start near the planet
-    player = Spaceship(LOGICAL_WIDTH/2, LOGICAL_HEIGHT/2 - 80, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+    # Start near the Terran planet (index 1)
+    start_p = planets[1]
+    # Offset slightly so player sees the planet
+    start_x = math.cos(start_p['angle']) * (start_p['dist'] + 80)
+    start_y = math.sin(start_p['angle']) * (start_p['dist'] + 80)
+    
+    player = Spaceship(start_x, start_y, LOGICAL_WIDTH, LOGICAL_HEIGHT)
 
     # Assets
     # Stars (Infinite field simulation)
-    # Positions are relative to screen size (0..1) to be scaled by view
     stars = []
     for _ in range(80):
         x = random.uniform(0, LOGICAL_WIDTH)
         y = random.uniform(0, LOGICAL_HEIGHT)
-        depth = 0.05 # Fixed depth so the star pattern doesn't distort (very distant)
+        depth = 0.05 
         c = random.randint(100, 200)
         stars.append({'x': x, 'y': y, 'depth': depth, 'c': c})
-    
-    light_orbit_angle = 0.0
-    
-    # World Setup
-    planet_pos = (LOGICAL_WIDTH/2, LOGICAL_HEIGHT/2)
     
     running = True
     while running:
@@ -83,24 +98,21 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Dynamic Lighting / Orbit
-        light_orbit_angle += ORBIT_SPEED
-        lx = math.sin(light_orbit_angle)
-        lz = math.cos(light_orbit_angle) 
-        ly = -0.3 # Slight vertical tilt
-        light_vector = (lx, ly, lz)
-
-        # Update Planet
-        current_planet.update()
+        # Update Sun
+        sun.update()
+        
+        # Update Planets
+        for p in planets:
+            p['angle'] += p['speed']
+            p['x'] = math.cos(p['angle']) * p['dist']
+            p['y'] = math.sin(p['angle']) * p['dist']
+            p['body'].update()
         
         # Update Player
         player.handle_input()
         player.update()
         
-        # Camera Update (Follow Player)
-        # target_cam_x = player.pos.x - LOGICAL_WIDTH/2
-        # target_cam_y = player.pos.y - LOGICAL_HEIGHT/2
-        # For simplicity, rigid lock:
+        # Camera Update (Rigid Lock)
         camera_x = player.pos.x - LOGICAL_WIDTH / 2
         camera_y = player.pos.y - LOGICAL_HEIGHT / 2
 
@@ -108,7 +120,6 @@ def main():
         canvas.fill(C_SPACE)
         for s in stars:
             # Scroll stars based on depth
-            # (Original Pos - Camera * Depth) % ScreenSize
             sx = (s['x'] - camera_x * s['depth']) % LOGICAL_WIDTH
             sy = (s['y'] - camera_y * s['depth']) % LOGICAL_HEIGHT
             
@@ -116,19 +127,41 @@ def main():
             if 0 <= ix < LOGICAL_WIDTH and 0 <= iy < LOGICAL_HEIGHT:
                  canvas.set_at((ix, iy), (s['c'], s['c'], s['c']))
 
-        # Draw Planet (World Space -> Screen Space)
-        # Planet is at planet_pos in world space
-        screen_planet_x = int(planet_pos[0] - camera_x)
-        screen_planet_y = int(planet_pos[1] - camera_y)
+        # Draw Sun
+        sun_sc_x = int(0 - camera_x)
+        sun_sc_y = int(0 - camera_y)
+        sun_margin = sun.radius + 50
         
-        # Only draw planet if somewhat on screen (Culling)
-        # Dynamic margin based on radius
-        planet_r = current_planet.radius
-        margin = planet_r + 50
-        
-        if (-margin < screen_planet_x < LOGICAL_WIDTH + margin and 
-            -margin < screen_planet_y < LOGICAL_HEIGHT + margin):
-            current_planet.draw(canvas, screen_planet_x, screen_planet_y, light_vector)
+        if (-sun_margin < sun_sc_x < LOGICAL_WIDTH + sun_margin and 
+            -sun_margin < sun_sc_y < LOGICAL_HEIGHT + sun_margin):
+            # Sun looks fine with simple front lighting or no lighting
+            sun.draw(canvas, sun_sc_x, sun_sc_y, (0, 0, 1))
+
+        # Draw Planets
+        for p in planets:
+            px, py = p['x'], p['y']
+            sc_x = int(px - camera_x)
+            sc_y = int(py - camera_y)
+            
+            radius = p['body'].radius
+            margin = radius + 50
+            
+            if (-margin < sc_x < LOGICAL_WIDTH + margin and 
+                -margin < sc_y < LOGICAL_HEIGHT + margin):
+                
+                # Calculate light direction (from planet TO sun)
+                # Sun is at 0,0
+                dx, dy = -px, -py
+                dist = math.sqrt(dx*dx + dy*dy)
+                
+                lx, ly, lz = 0, 0, 1
+                if dist > 0:
+                    lx = dx / dist
+                    ly = dy / dist
+                    # Add a small Z component so the center isn't pitch black
+                    lz = 0.25 
+                
+                p['body'].draw(canvas, sc_x, sc_y, (lx, ly, lz))
         
         # Draw Player
         player.draw(canvas, camera_x, camera_y)
