@@ -6,104 +6,163 @@ import random
 pygame.init()
 
 # Constants
-WIDTH, HEIGHT = 800, 600
-FPS = 60
-PLANET_RADIUS = 200
-ROTATION_SPEED = 0.5
+SCALE_FACTOR = 4
+LOGICAL_WIDTH, LOGICAL_HEIGHT = 200, 150
+WIDTH, HEIGHT = LOGICAL_WIDTH * SCALE_FACTOR, LOGICAL_HEIGHT * SCALE_FACTOR
+FPS = 30
+PLANET_RADIUS = 50 
+ROTATION_SPEED = 1.0
 
-# Colors
-SPACE_COLOR = (5, 5, 10)
-OCEAN_COLOR = (20, 40, 100)
+# Colors (Pixel Art Palette)
+C_SPACE = (20, 10, 25)
+C_OCEAN_DEEP = (35, 40, 80)
+C_OCEAN_SHALLOW = (50, 80, 140)
+C_LAND_MAIN = (100, 160, 60)
+C_LAND_HIGHLIGHT = (140, 200, 100)
+C_CLOUD = (230, 240, 255)
+C_SHADOW = (10, 5, 15)
 
-def generate_planet_texture(width, height):
-    """Generates a seamless noise-like texture."""
-    surf = pygame.Surface((width, height))
-    surf.fill(OCEAN_COLOR)
+def generate_pixel_texture(w, h):
+    """Generates a chunky, pixel-art style map."""
+    surf = pygame.Surface((w, h))
+    surf.fill(C_OCEAN_DEEP)
     
-    # Blobs
-    num_blobs = 150
-    for _ in range(num_blobs):
-        x = random.randint(0, width)
-        y = random.randint(0, height)
-        r = random.randint(10, 60)
-        c_val = random.randint(50, 150)
-        color = (c_val, c_val + 50, c_val)
+    # generate "islands"
+    # Create a few centers
+    num_islands = 12
+    centers = []
+    for _ in range(num_islands):
+        cx = random.randint(0, w)
+        cy = random.randint(int(h*0.2), int(h*0.8))
+        centers.append((cx, cy))
         
-        pygame.draw.circle(surf, color, (x, y), r)
-        pygame.draw.circle(surf, color, (x - width, y), r)
-        pygame.draw.circle(surf, color, (x + width, y), r)
+    # Walkers / Growth
+    # For each pixel, if it's close to a center + noise, it's land
+    # This is slow in python, so we paint using many small rects
+    
+    # 1. Base Land
+    for cx, cy in centers:
+        # Each island consists of many small blobs
+        island_size = random.randint(20, 100)
+        curr_x, curr_y = cx, cy
+        for _ in range(island_size):
+            # Draw a chunk
+            chunk_w = random.randint(2, 6)
+            chunk_h = random.randint(2, 6)
+            
+            # Shallow water halo
+            pygame.draw.rect(surf, C_OCEAN_SHALLOW, (curr_x - 2, curr_y - 2, chunk_w + 4, chunk_h + 4))
+            
+            # Wrap around
+            if curr_x < 0: pygame.draw.rect(surf, C_OCEAN_SHALLOW, (curr_x + w - 2, curr_y - 2, chunk_w + 4, chunk_h + 4))
+            if curr_x > w: pygame.draw.rect(surf, C_OCEAN_SHALLOW, (curr_x - w - 2, curr_y - 2, chunk_w + 4, chunk_h + 4))
 
-    # Simple Ice caps
-    pygame.draw.rect(surf, (200, 220, 255), (0, 0, width, 30))
-    pygame.draw.rect(surf, (200, 220, 255), (0, height - 30, width, 30))
+            # Move walker
+            curr_x += random.randint(-4, 4)
+            curr_y += random.randint(-4, 4)
+            
+    # 2. Main Land (Layer on top)
+    for cx, cy in centers: # Reuse centers for consistency
+        # Re-seed random or just use similar logic
+        random.seed(cx * cy) 
+        island_size = random.randint(20, 100)
+        curr_x, curr_y = cx, cy
+        for _ in range(island_size):
+            chunk_w = random.randint(1, 4)
+            chunk_h = random.randint(1, 4)
+            
+            col = C_LAND_MAIN
+            if random.random() > 0.7: col = C_LAND_HIGHLIGHT
+            
+            pygame.draw.rect(surf, col, (curr_x, curr_y, chunk_w, chunk_h))
+            
+            # Wrap
+            pygame.draw.rect(surf, col, (curr_x - w, curr_y, chunk_w, chunk_h))
+            pygame.draw.rect(surf, col, (curr_x + w, curr_y, chunk_w, chunk_h))
+
+            curr_x += random.randint(-3, 3)
+            curr_y += random.randint(-3, 3)
+    
+    random.seed() # Reset seed
+
+    # 3. Clouds (Horizontal strips)
+    for _ in range(20):
+        y = random.randint(0, h)
+        width_cloud = random.randint(10, 40)
+        x = random.randint(0, w)
+        cloud_surf = pygame.Surface((width_cloud, 2))
+        cloud_surf.fill(C_CLOUD)
+        surf.blit(cloud_surf, (x, y))
+        surf.blit(cloud_surf, (x - w, y)) # Wrap
 
     return surf
 
-def create_starfield(w, h, num_stars=150):
+def create_dither_pattern(w, h):
     s = pygame.Surface((w, h), pygame.SRCALPHA)
-    for _ in range(num_stars):
-        x, y = random.randint(0, w), random.randint(0, h)
-        b = random.randint(150, 255)
-        pygame.draw.circle(s, (b, b, b), (x, y), 1)
+    for y in range(0, h, 2):
+        for x in range(0, w, 2):
+             if (x + y) % 2 == 0:
+                 s.set_at((x, y), (0, 0, 0, 50))
     return s
 
 def main():
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Spherical Projection Planet")
+    # Window setup
+    real_screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    # Render surface (small)
+    canvas = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT))
+    
+    pygame.display.set_caption("Pixel Planet")
     clock = pygame.time.Clock()
 
-    # Texture config
-    tex_w, tex_h = 800, 400
-    planet_texture = generate_planet_texture(tex_w, tex_h)
+    # Texture
+    tex_w, tex_h = 256, 128
+    planet_texture = generate_pixel_texture(tex_w, tex_h)
     
-    # To handle wrapping, we create a double-wide texture
+    # Double width for easy wrapping
     wrapped_texture = pygame.Surface((tex_w * 2, tex_h))
     wrapped_texture.blit(planet_texture, (0, 0))
     wrapped_texture.blit(planet_texture, (tex_w, 0))
 
-    stars = create_starfield(WIDTH, HEIGHT)
+    # Assets
+    # Stars (small points)
+    stars_surf = pygame.Surface((LOGICAL_WIDTH, LOGICAL_HEIGHT))
+    stars_surf.fill(C_SPACE)
+    for _ in range(50):
+        x, y = random.randint(0, LOGICAL_WIDTH), random.randint(0, LOGICAL_HEIGHT)
+        c = random.randint(100, 200)
+        stars_surf.set_at((x, y), (c, c, c))
 
-    # Lighting / Compositing layers
-    # Sphere shading (Shadow)
+    # Shadow with dithering feel
+    # We build a shadow map where 0 = transparent, 1 = shadow
+    # For pixel art, we often use DITHERING for shadow edges
     shadow_overlay = pygame.Surface((PLANET_RADIUS * 2, PLANET_RADIUS * 2), pygame.SRCALPHA)
-    shadow_overlay.fill((0,0,0,0))
     
-    # Procedural shadow generation
-    # Iterate pixel by pixel for high quality alpha gradient shadow
-    # This is slow, but we only do it once at startup
     for y in range(PLANET_RADIUS * 2):
         dy = (y - PLANET_RADIUS) / PLANET_RADIUS
         for x in range(PLANET_RADIUS * 2):
             dx = (x - PLANET_RADIUS) / PLANET_RADIUS
-            if dx*dx + dy*dy <= 1.05: # radius margin
-                # Simple dot product shading
-                # Light coming from top-left (-1,-1)
-                light_x, light_y = -0.707, -0.707
+            dist_sq = dx*dx + dy*dy
+            if dist_sq <= 1.0: # Inside circle
+                light_x, light_y = -0.5, -0.5
                 dot = (dx * light_x + dy * light_y)
                 
-                # If dot is positive, it's lit (or partially lit)
-                # If dot is negative, it's shadowed
-                # We want full shadow at dot = -0.2 (terminator soft edge)
-                
-                # Shadow intensity: 0 (fully lit) to 255 (dark)
-                # Map dot range [-1, 1] -> intensity
-                # We want sharp terminator.
-                # dot > 0.1 -> Intensity 0
-                # dot < -0.1 -> Intensity 200
-                
-                intensity = 0
-                if dot < 0.2:
-                    val = (0.2 - dot) * 200
-                    intensity = int(min(200, val))
-                
-                if intensity > 0:
-                    shadow_overlay.set_at((x, y), (0, 0, 0, intensity))
-
+                # Pixel Art Shadow Logic
+                # If dot < -0.2: Dark Shadow
+                # If dot < 0.1: Dither Shadow
+                if dot < -0.2:
+                    shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+                elif dot < 0.2:
+                    # Dither pattern check
+                    if (x + y) % 2 == 0:
+                        shadow_overlay.set_at((x, y), (0, 0, 0, 180))
+    
     rotation_angle = 0.0
 
-    # Settings for the Spherical Projection Grid
-    SLICE_HEIGHT = 4         # Height of horizontal strips (Latitude resolution)
-    LONGITUDE_SEGMENTS = 16   # Number of chunks per strip (Longitude resolution) 
+    # Rendering Config
+    SLICE_HEIGHT = 2        # Use smaller strips for blockier look? Or 1 for precision
+    # Actually, for pixel art look, we want crisp pixels.
+    # 1px slice height ensures specific rows.
+    SLICE_HEIGHT = 1 
     
     running = True
     while running:
@@ -114,102 +173,103 @@ def main():
         rotation_angle += ROTATION_SPEED
         if rotation_angle >= 360: rotation_angle -= 360
         
-        # Convert rotation to normalized texture X (0..1)
-        # Texture width covers 360 degrees
         rot_norm = rotation_angle / 360.0
 
-        screen.fill(SPACE_COLOR)
-        screen.blit(stars, (0, 0))
+        # Draw to canvas
+        canvas.blit(stars_surf, (0, 0))
 
-        planet_center = (WIDTH // 2, HEIGHT // 2)
+        planet_center_x = LOGICAL_WIDTH // 2
+        planet_center_y = LOGICAL_HEIGHT // 2
         
-        # Draw the planet using horizontal slices
-        # y_rel is relative to center
+        # --- Planet Rendering ---
+        # Iterate rows
         for y_rel in range(-PLANET_RADIUS, PLANET_RADIUS, SLICE_HEIGHT):
-            # 1. Determine spherical width at this latitude
-            # Circle equation: x^2 + y^2 = r^2  -> x = sqrt(r^2 - y^2)
-            # Use center of the slice for calculation
-            y_center = y_rel + SLICE_HEIGHT / 2
-            if abs(y_center) >= PLANET_RADIUS: continue # Skip edge cases
+            y_center = y_rel
+            if abs(y_center) >= PLANET_RADIUS: continue
 
+            # Circle width at this Y
             half_width = math.sqrt(PLANET_RADIUS**2 - y_center**2)
-            strip_width = int(half_width * 2)
-            if strip_width <= 0: continue
+            width_here = int(half_width * 2)
+            if width_here <= 0: continue
 
-            # 2. Determine texture Y coordinate (Latitude mapping)
-            # y = R * sin(phi) -> phi = asin(y/R)
-            # We map phi (-pi/2 to pi/2) to texture Y (height to 0)
-            # Because texture usually has North (pi/2) at Y=0
+            # Lat coordinate
             lat = math.asin(y_center / PLANET_RADIUS)
-            
-            # Map lat to 0..1
-            # Lat: +1.57 (North) -> Tex Y: 0
-            # Lat: -1.57 (South) -> Tex Y: 1
             norm_v = 1.0 - (lat + (math.pi/2)) / math.pi
             tex_y = int(norm_v * tex_h)
-            tex_y = max(0, min(tex_h - 1, tex_y)) # Clamp
+            tex_y = max(0, min(tex_h-1, tex_y))
 
-            # 3. Draw horizontal segments for this strip to simulate X-curvature
-            # Visible longitude is -90 to +90 degrees relative to center normal
+            # Draw row
+            # To simulate 3D rotation, we sample the texture at varying intervals
+            # Center of planet = 1:1 texture scale (roughly)
+            # Edge of planet = compressed
             
-            # Segment step in radians
-            segment_angle_step = (math.pi) / LONGITUDE_SEGMENTS # Pi radians total view
+            # Optimization: Instead of drawing many small rects (which is slow in python loop),
+            # construct a row surface by scaling a chunk of texture?
+            # 
+            # Yes: The visible arc represents 180 degrees (0.5 of texture width).
+            # But it's projected non-linearly.
+            # 
+            # Simple "Old School" effect:
+            # Just look up texture X for each screen X using asin
             
-            # Base destination y on screen
-            dest_y = (HEIGHT // 2) + y_rel
+            dest_y = planet_center_y + y_rel
+            start_x = planet_center_x - int(half_width)
             
-            for i in range(LONGITUDE_SEGMENTS):
-                # Calculate angles for this segment (relative to center -pi/2 to pi/2)
-                theta1 = - (math.pi / 2) + (i * segment_angle_step)
-                theta2 = - (math.pi / 2) + ((i + 1) * segment_angle_step)
+            # This 'per-pixel' loop is dangerous in Python for performance if resolution is high.
+            # But resolution is small (100px wide max). 100 * 100 = 10k iters per frame.
+            # Should be fine for 30 FPS.
+            
+            # Current row in texture
+            # We want to grab specific pixels from the texture row `tex_y`
+            
+            # Let's direct pixel access?
+            # Pygame Surface access is slow. 
+            # Better: Slice the texture row, scale it using a non-linear transform? 
+            # No, standard transform is linear.
+            
+            # Let's try the segmented approach again, but cleaner.
+            num_segments = 10 # 10 chunks across
+            
+            for i in range(num_segments):
+                # Screen space segments (linear in angle)
+                t1 = - (math.pi / 2) + (i * (math.pi/num_segments))
+                t2 = - (math.pi / 2) + ((i + 1) * (math.pi/num_segments))
                 
-                # Project to Screen X
-                # x = R_at_lat * sin(theta)
-                x1 = half_width * math.sin(theta1)
-                x2 = half_width * math.sin(theta2)
+                # Projected widths
+                x1 = half_width * math.sin(t1)
+                x2 = half_width * math.sin(t2)
                 
-                seg_x = (WIDTH // 2) + int(x1)
+                seg_x = int(start_x + half_width + x1)
                 seg_w = int(x2 - x1)
+                if seg_w < 1: seg_w = 1
                 
-                # To prevent gaps due to rounding, force min width
-                if seg_w < 1: seg_w = 1 
+                # Texture UVs
+                u1 = (t1 + math.pi/2) / (2*math.pi) + rot_norm
+                u2 = (t2 + math.pi/2) / (2*math.pi) + rot_norm
+                u_w = (u2 - u1) # This is constant? No, u2-u1 in angle space is constant.
+                # Actually, in texture space, the width we grab is constant! 
+                # (Since we step linearly in angle).
+                # The visual compression comes from drawing effective texture width into smaller screen width.
                 
-                # Calculate Source Texture X
-                # The visible face covers a specific range of U in the texture
-                # Based on rotation.
-                # theta is -pi/2..pi/2. Map to 0..0.5 in texture UV space (since 360 is full width)
-                # But we need to add rotation offset.
+                u1 %= 1.0
+                src_x = int(u1 * tex_w)
+                src_w_pixels = int((1.0 / (2 * num_segments)) * tex_w) 
                 
-                # Normalized longitude offset from 'center meridian'
-                u1_local = (theta1 + (math.pi/2)) / (2 * math.pi) # 0 to 0.5
-                u2_local = (theta2 + (math.pi/2)) / (2 * math.pi)
-                
-                # Add global rotation
-                u1_final = (u1_local + rot_norm) % 1.0
-                # u2 doesn't matter for start, we just calculate width of source
-                u_width = (u2_local - u1_local)
-                
-                src_x = int(u1_final * tex_w)
-                src_w = int(u_width * tex_w)
-                
-                dest_rect = pygame.Rect(seg_x, dest_y, seg_w + 1, SLICE_HEIGHT) # +1 to fill gaps
-                
-                # Extract and scale
+                # Draw
+                # subsurface(rect) -> scale -> blit
                 try:
-                    # We assume texture Y is just 1px or 2px needed, but we used SLICE_HEIGHT
-                    # to fill the screen gap.
-                    # We take a small sample from texture (height 2) and stretch it to slice height
-                    segment_img = wrapped_texture.subsurface((src_x, tex_y, src_w, 2))
-                    segment_scaled = pygame.transform.scale(segment_img, (dest_rect.width, dest_rect.height))
-                    screen.blit(segment_scaled, dest_rect)
-                except ValueError:
+                    chunk = wrapped_texture.subsurface((src_x, tex_y, src_w_pixels, 1))
+                    chunk = pygame.transform.scale(chunk, (seg_w, 1))
+                    canvas.blit(chunk, (seg_x, dest_y))
+                except (ValueError, pygame.error):
                     pass
 
-        # Draw overlays
-        screen.blit(shadow_overlay, (planet_center[0] - PLANET_RADIUS, planet_center[1] - PLANET_RADIUS))
+        # Apply Shadow
+        canvas.blit(shadow_overlay, (planet_center_x - PLANET_RADIUS, planet_center_y - PLANET_RADIUS))
         
-        # Rim (Atmosphere)
-        pygame.draw.circle(screen, (100, 200, 255), planet_center, PLANET_RADIUS, 1)
+        # Scale to window
+        scaled_surf = pygame.transform.scale(canvas, (WIDTH, HEIGHT))
+        real_screen.blit(scaled_surf, (0, 0))
 
         pygame.display.flip()
         clock.tick(FPS)
