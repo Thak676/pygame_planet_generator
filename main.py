@@ -11,7 +11,9 @@ LOGICAL_WIDTH, LOGICAL_HEIGHT = 200, 150
 WIDTH, HEIGHT = LOGICAL_WIDTH * SCALE_FACTOR, LOGICAL_HEIGHT * SCALE_FACTOR
 FPS = 30
 PLANET_RADIUS = 50 
-ROTATION_SPEED = 1.0
+ROTATION_SPEED = 0.001
+WEATHER_SPEED = 0.001
+ORBIT_SPEED = 0.0005
 
 # Colors (Pixel Art Palette)
 C_SPACE = (20, 10, 25)
@@ -22,8 +24,8 @@ C_LAND_HIGHLIGHT = (140, 200, 100)
 C_CLOUD = (230, 240, 255)
 C_SHADOW = (10, 5, 15)
 
-def generate_pixel_texture(w, h):
-    """Generates a chunky, pixel-art style map."""
+def generate_base_map(w, h):
+    """Generates a chunky, pixel-art style map (Base Terrain)."""
     surf = pygame.Surface((w, h))
     surf.fill(C_OCEAN_DEEP)
     
@@ -84,35 +86,110 @@ def generate_pixel_texture(w, h):
             curr_y += random.randint(-3, 3)
     
     random.seed() # Reset seed
-
-    # 3. Clouds (Blobby shapes)
-    num_clouds = 25
-    for _ in range(num_clouds):
-        cx = random.randint(0, w)
-        cy = random.randint(0, h)
-        
-        # Build cloud out of multiple small puffs
-        num_puffs = random.randint(4, 9)
-        for _ in range(num_puffs):
-            puff_w = random.randint(4, 9)
-            puff_h = random.randint(2, 5)
-            
-            # Scatter puffs around center
-            ox = random.randint(-8, 8)
-            oy = random.randint(-3, 3)
-            
-            px, py = cx + ox, cy + oy
-            
-            # Draw puff
-            pygame.draw.rect(surf, C_CLOUD, (px, py, puff_w, puff_h))
-            
-            # Handle wrapping for X axis
-            if px < 0:
-                pygame.draw.rect(surf, C_CLOUD, (px + w, py, puff_w, puff_h))
-            elif px + puff_w > w:
-                pygame.draw.rect(surf, C_CLOUD, (px - w, py, puff_w, puff_h))
-
     return surf
+
+class CloudManager:
+    def __init__(self, w, h, num_clouds=15):
+        self.w, self.h = w, h
+        self.clouds = []
+        for _ in range(num_clouds):
+            self.create_cloud()
+
+    def create_cloud(self):
+        x = random.randint(0, self.w)
+        y = random.randint(int(self.h * 0.1), int(self.h * 0.9))
+        
+        # Cloud composition
+        puffs = []
+        num_puffs = random.randint(5, 10)
+        for _ in range(num_puffs):
+            w = random.randint(4, 9)
+            h = random.randint(2, 5)
+            ox = random.randint(-8, 8)
+            oy = random.randint(-4, 4)
+            puffs.append({'ox': ox, 'oy': oy, 'w': w, 'h': h})
+            
+        self.clouds.append({
+            'x': float(x),
+            'y': float(y),
+            'speed': WEATHER_SPEED + random.uniform(-0.05, 0.05),
+            # Actually since rot speed is positive, we want clouds to move distinct from terrain.
+            # Terrain moves because texture mapping u includes rot_norm.
+            # So coordinate 0 on texture basically rotates around 360 over time.
+            # Clouds at fixed X on texture rotate WITH the planet.
+            # speed here is 'wind speed' relative to ground.
+            'puffs': puffs
+        })
+
+    def update(self, rot_norm):
+        # rot_norm (0..1) is the current rotation offset of the texture mapping.
+        # The visible face of the planet roughly spans 0.5 (180 degrees) of the texture width.
+        # Visible texture U range: [rot_norm, rot_norm + 0.5] (modulo 1.0).
+        
+        # Define the "Safe Zone" where clouds are visible or near-visible.
+        # We add padding to ensure we don't mutate clouds right at the edge of the screen.
+        safe_u_start = (rot_norm - 0.2) % 1.0
+        safe_u_end = (rot_norm + 0.7) % 1.0 
+        
+        safe_x_start = safe_u_start * self.w
+        safe_x_end = safe_u_end * self.w
+        
+        is_split_safety = safe_x_end < safe_x_start
+
+        surf = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        
+        for c in self.clouds:
+            # Move cloud (Float precision for smoothness)
+            c['x'] += c['speed']
+            if c['x'] >= self.w:
+                 c['x'] -= self.w
+            
+            # Check visibility / safety
+            cx = c['x']
+            in_safe_zone = False
+            
+            if not is_split_safety:
+                if safe_x_start <= cx <= safe_x_end:
+                    in_safe_zone = True
+            else:
+                # Wrap case
+                if cx >= safe_x_start or cx <= safe_x_end:
+                    in_safe_zone = True
+            
+            # If NOT in safe zone (deep in the back), mutate shape slightly
+            if not in_safe_zone:
+                # Mutation (Evolution)
+                if random.random() < 0.1:
+                    if c['puffs']:
+                        p = random.choice(c['puffs'])
+                        # Jitter
+                        p['ox'] += random.uniform(-0.5, 0.5)
+                        p['oy'] += random.uniform(-0.5, 0.5)
+                        
+                        # Clamp
+                        p['ox'] = max(-12, min(12, p['ox']))
+                        p['oy'] = max(-6, min(6, p['oy']))
+
+                    # Add/Remove puffs
+                    if random.random() < 0.02 and len(c['puffs']) < 15:
+                        c['puffs'].append({
+                            'ox': random.randint(-8, 8), 
+                            'oy': random.randint(-4, 4), 
+                            'w': random.randint(3, 7), 
+                            'h': random.randint(2, 4)
+                        })
+                    if random.random() < 0.02 and len(c['puffs']) > 4:
+                        c['puffs'].pop()
+
+            # Draw using floats (Pygame will handle sub-pixel truncating, avoiding int() snap artifacts)
+            positions = [cx, cx - self.w, cx + self.w]
+            for dx in positions:
+                # Cull drawing for performance/sanity
+                if -30 < dx < self.w + 30:
+                     for p in c['puffs']:
+                         pygame.draw.rect(surf, C_CLOUD, (dx + p['ox'], c['y'] + p['oy'], p['w'], p['h']))
+
+        return surf
 
 def create_dither_pattern(w, h):
     s = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -133,12 +210,11 @@ def main():
 
     # Texture
     tex_w, tex_h = 256, 128
-    planet_texture = generate_pixel_texture(tex_w, tex_h)
+    base_texture = generate_base_map(tex_w, tex_h)
+    clouds = CloudManager(tex_w, tex_h)
     
     # Double width for easy wrapping
     wrapped_texture = pygame.Surface((tex_w * 2, tex_h))
-    wrapped_texture.blit(planet_texture, (0, 0))
-    wrapped_texture.blit(planet_texture, (tex_w, 0))
 
     # Assets
     # Stars (small points)
@@ -167,8 +243,6 @@ def main():
     light_orbit_angle = 0.0
 
     # Rendering Config
-    SLICE_HEIGHT = 2        # Use smaller strips for blockier look? Or 1 for precision
-    # Actually, for pixel art look, we want crisp pixels.
     # 1px slice height ensures specific rows.
     SLICE_HEIGHT = 1 
     
@@ -184,18 +258,27 @@ def main():
         rot_norm = rotation_angle / 360.0
 
         # Dynamic Lighting
-        light_orbit_angle += 0.02
+        light_orbit_angle += ORBIT_SPEED # Slower day/night cycle
         # Orbit the light around the planet
         lx = math.sin(light_orbit_angle)
         lz = math.cos(light_orbit_angle) 
         ly = -0.3 # Slight vertical tilt
         
+        # Update Clouds
+        # We pass rotation_angle or rot_norm to help it know what's visible
+        cloud_surf = clouds.update(rot_norm) # Pass rot_norm to check visibility
+        
+        # Composite Texture
+        # Combine terrain + clouds
+        planet_texture = base_texture.copy()
+        planet_texture.blit(cloud_surf, (0, 0))
+        
+        # Update the wrapped texture buffer used by the renderer
+        wrapped_texture.blit(planet_texture, (0, 0))
+        wrapped_texture.blit(planet_texture, (tex_w, 0))
+        
         # Re-render shadow
         shadow_overlay.fill((0,0,0,0))
-        # Lock surface for faster pixel access
-        # Note: In Pygame, individual set_at is slow. 
-        # For better perf we might use PixelArray, but let's try set_at first.
-        # If it lags, we will optimize.
         
         for x, y, nx, ny, nz in pixel_normals:
              # Dot product
@@ -238,50 +321,15 @@ def main():
             tex_y = max(0, min(tex_h-1, tex_y))
 
             # Draw row
-            # To simulate 3D rotation, we sample the texture at varying intervals
-            # Center of planet = 1:1 texture scale (roughly)
-            # Edge of planet = compressed
-            
-            # Optimization: Instead of drawing many small rects (which is slow in python loop),
-            # construct a row surface by scaling a chunk of texture?
-            # 
-            # Yes: The visible arc represents 180 degrees (0.5 of texture width).
-            # But it's projected non-linearly.
-            # 
-            # Simple "Old School" effect:
-            # Just look up texture X for each screen X using asin
-            
             dest_y = planet_center_y + y_rel
             start_x = planet_center_x - int(half_width)
             
-            # This 'per-pixel' loop is dangerous in Python for performance if resolution is high.
-            # But resolution is small (100px wide max). 100 * 100 = 10k iters per frame.
-            # Should be fine for 30 FPS.
-            
-            # Current row in texture
-            # We want to grab specific pixels from the texture row `tex_y`
-            
-            # Let's direct pixel access?
-            # Pygame Surface access is slow. 
-            # Better: Slice the texture row, scale it using a non-linear transform? 
-            # No, standard transform is linear.
-            
-            # Let's try the segmented approach again, but cleaner.
             # Dynamic segmentation to fix "banding" artifacts
             # We ensure segments are roughly 2 pixels wide on screen for smoothness
             num_segments = max(16, width_here // 2)
             
-            # Since theta steps are equal, the Source Texture Width is constant for all segments
-            # (Visible face is 0.5 of texture width)
-            # We calculate it once to avoid rounding jitter
             total_visible_tex_u = 0.5
             segment_tex_w = (total_visible_tex_u / num_segments) * tex_w
-            
-            # We boost width slightly to overlap seams (ceil-ish approach) or handled by scale
-            # Using ceil(segment_tex_w) ensures we don't have gaps in texture reading, 
-            # but scale might jitter.
-            # Best to just integerize carefully loop-by-loop or use float fallback if pygame supported it.
-            # We'll use round for x, and ceil for w.
             
             for i in range(num_segments):
                 # Screen space segments (linear in angle)
@@ -302,16 +350,10 @@ def main():
                 u1 = (t1 + math.pi/2) / (2*math.pi) + rot_norm
                 
                 # Calculate pixel X in texture (wrapped)
-                # We use the double-texture tech so we just modulo the start point
                 src_x = int((u1 % 1.0) * tex_w)
-                
-                # Use calculated constant width for stability, but create int rect
-                # Floating point accumulation might be an issue if we don't recalc u from i?
-                # We recalc u from i every time, so no drift.
-                src_w_pixels = int(segment_tex_w) + 1 # +1 for safety / overlap
+                src_w_pixels = int(segment_tex_w) + 1 
                 
                 # Draw
-                # subsurface(rect) -> scale -> blit
                 try:
                     chunk = wrapped_texture.subsurface((src_x, tex_y, src_w_pixels, 1))
                     chunk = pygame.transform.scale(chunk, (seg_w, 1))
